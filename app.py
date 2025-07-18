@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.model_selection import train_test_split
 import numpy as np
 
 # Load data
@@ -19,9 +20,11 @@ feature_cols = ['danceability', 'energy', 'valence', 'tempo',
 # Track history
 if 'history' not in st.session_state:
     st.session_state.history = []
+if 'liked_songs' not in st.session_state:
+    st.session_state.liked_songs = []
 
 # Page Navigation
-page = st.sidebar.selectbox("Pilih Halaman", ["Home", "Rekomendasi", "Riwayat"])
+page = st.sidebar.selectbox("Pilih Halaman", ["Home", "Rekomendasi", "Riwayat", "Simulasi RF"])
 
 # ------------------ PAGE 1: HOME ------------------
 if page == "Home":
@@ -90,3 +93,36 @@ elif page == "Riwayat":
                 st.write(f"- {song[0]} - {song[1]}")
     else:
         st.info("Belum ada pencarian dilakukan.")
+
+# ------------------ PAGE 4: SIMULASI RF ------------------
+elif page == "Simulasi RF":
+    st.title("Simulasi Rekomendasi Personal (Random Forest)")
+
+    st.subheader("1. Pilih Lagu Favorit")
+    track_options = df[['track_name', 'track_artist']].drop_duplicates()
+    selected_tracks = st.multiselect("Pilih 3-10 lagu favorit:",
+                                     track_options.apply(lambda x: f"{x['track_name']} - {x['track_artist']}", axis=1))
+
+    if st.button("Latih Model dan Rekomendasikan") and selected_tracks:
+        liked_ids = []
+        for track_str in selected_tracks:
+            name, artist = track_str.split(" - ", 1)
+            result = df[(df['track_name'] == name) & (df['track_artist'] == artist)]
+            if not result.empty:
+                liked_ids.append(result.iloc[0]['track_id'])
+
+        df['liked'] = df['track_id'].apply(lambda x: 1 if x in liked_ids else 0)
+
+        X = df[feature_cols]
+        y = df['liked']
+
+        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+        rf.fit(X, y)
+
+        df['like_prob'] = rf.predict_proba(X)[:, 1]
+        rekomendasi = df[~df['track_id'].isin(liked_ids)].sort_values(by='like_prob', ascending=False).drop_duplicates('track_name').head(10)
+
+        st.subheader("Rekomendasi Berdasarkan Model Anda:")
+        st.table(rekomendasi[['track_name', 'track_artist', 'playlist_genre', 'like_prob']])
+    elif selected_tracks:
+        st.info("Klik tombol untuk melatih model dan melihat rekomendasi.")
