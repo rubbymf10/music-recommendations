@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 
 # Load data
@@ -24,7 +24,7 @@ if 'liked_songs' not in st.session_state:
     st.session_state.liked_songs = []
 
 # Page Navigation
-page = st.sidebar.selectbox("Pilih Halaman", ["Home", "Rekomendasi", "Riwayat", "Simulasi RF"])
+page = st.sidebar.selectbox("Pilih Halaman", ["Home", "Rekomendasi & Simulasi", "Riwayat"])
 
 # ------------------ PAGE 1: HOME ------------------
 if page == "Home":
@@ -43,51 +43,93 @@ if page == "Home":
         top5_genre = top5_genre.sort_values(by='track_popularity', ascending=False).drop_duplicates('track_name').head(5)
         st.table(top5_genre[['track_name', 'track_artist', 'track_popularity']])
 
-# ------------------ PAGE 2: REKOMENDASI ------------------
-elif page == "Rekomendasi":
-    st.title("Rekomendasi Lagu Mirip dengan Input Anda")
+# ------------------ PAGE 2: REKOMENDASI & SIMULASI ------------------
+elif page == "Rekomendasi & Simulasi":
+    st.title("Rekomendasi Lagu Berdasarkan Preferensi Anda")
 
-    track_input = st.text_input("🎧 Masukkan judul lagu favorit Anda")
+    tab1, tab2 = st.tabs(["Rekomendasi Mirip Lagu", "Rekomendasi Personal (RF)"])
 
-    if track_input:
-        matched = df[df['track_name'].str.lower().str.contains(track_input.lower())]
+    # Tab 1: Content-Based Recommendation
+    with tab1:
+        st.subheader("Rekomendasi Lagu Mirip dengan Input Anda")
 
-        if not matched.empty:
-            selected_track = matched.iloc[0]
-            st.success(f"Lagu dipilih: {selected_track['track_name']} - {selected_track['track_artist']}")
+        track_input = st.text_input("🎧 Masukkan judul lagu favorit Anda")
 
-            # Simpan ke history
-            st.session_state.history.append({
-                "input": f"{selected_track['track_name']} - {selected_track['track_artist']}",
-                "output": []
-            })
+        if track_input:
+            matched = df[df['track_name'].str.lower().str.contains(track_input.lower())]
 
-            # Cari rekomendasi berdasarkan kemiripan fitur
-            input_features = selected_track[feature_cols].values.reshape(1, -1)
-            all_features = df[feature_cols].values
-            similarities = cosine_similarity(input_features, all_features)[0]
-            df['similarity'] = similarities
-            recommendations = df[df['track_id'] != selected_track['track_id']].sort_values(by='similarity', ascending=False)
-            recommendations = recommendations.drop_duplicates('track_name').head(5)
+            if not matched.empty:
+                selected_track = matched.iloc[0]
+                st.success(f"Lagu dipilih: {selected_track['track_name']} - {selected_track['track_artist']}")
 
-            # Tampilkan hasil seperti tampilan Spotify
-            st.markdown("## 🎯 Rekomendasi Teratas")
-            top_reco = recommendations.iloc[0]
-            st.markdown(f"**🎵 {top_reco['track_name']}**  ")
-            st.markdown(f"*{top_reco['track_artist']}*  ")
-            st.markdown(f"Genre: `{top_reco['playlist_genre']}` | Kecocokan: `{top_reco['similarity']:.2f}`")
+                # Simpan ke history
+                st.session_state.history.append({
+                    "input": f"{selected_track['track_name']} - {selected_track['track_artist']}",
+                    "output": []
+                })
 
-            st.markdown("---")
-            st.markdown("## 🔁 More Like This")
-            for i in range(1, len(recommendations)):
-                row = recommendations.iloc[i]
-                st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']})")
+                # Normalisasi fitur
+                scaler = MinMaxScaler()
+                scaled_features = scaler.fit_transform(df[feature_cols])
+                input_features = scaler.transform(selected_track[feature_cols].values.reshape(1, -1))
 
-            # Simpan output ke history
-            st.session_state.history[-1]['output'] = recommendations[['track_name', 'track_artist']].values.tolist()
+                similarities = cosine_similarity(input_features, scaled_features)[0]
+                df['similarity'] = similarities
+                recommendations = df[df['track_id'] != selected_track['track_id']].sort_values(by='similarity', ascending=False)
+                recommendations = recommendations.drop_duplicates('track_name').head(5)
 
-        else:
-            st.warning("Lagu tidak ditemukan dalam dataset.")
+                # Tampilkan hasil seperti tampilan Spotify
+                st.markdown("## 🎯 Rekomendasi Teratas")
+                top_reco = recommendations.iloc[0]
+                st.markdown(f"**🎵 {top_reco['track_name']}**  ")
+                st.markdown(f"*{top_reco['track_artist']}*  ")
+                st.markdown(f"Genre: `{top_reco['playlist_genre']}` | Kecocokan: `{top_reco['similarity']:.2f}`")
+
+                st.markdown("---")
+                st.markdown("## 🔁 More Like This")
+                for i in range(1, len(recommendations)):
+                    row = recommendations.iloc[i]
+                    st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']})")
+
+                # Simpan output ke history
+                st.session_state.history[-1]['output'] = recommendations[['track_name', 'track_artist']].values.tolist()
+
+            else:
+                st.warning("Lagu tidak ditemukan dalam dataset.")
+
+    # Tab 2: Personalized RF Recommendation
+    with tab2:
+        st.subheader("Simulasi Rekomendasi Personal (Random Forest)")
+
+        track_options = df[['track_name', 'track_artist']].drop_duplicates()
+        selected_tracks = st.multiselect("Pilih 3-10 lagu favorit:",
+                                         track_options.apply(lambda x: f"{x['track_name']} - {x['track_artist']}", axis=1))
+
+        if st.button("Latih Model dan Rekomendasikan") and selected_tracks:
+            liked_ids = []
+            for track_str in selected_tracks:
+                name, artist = track_str.split(" - ", 1)
+                result = df[(df['track_name'] == name) & (df['track_artist'] == artist)]
+                if not result.empty:
+                    liked_ids.append(result.iloc[0]['track_id'])
+
+            df['liked'] = df['track_id'].apply(lambda x: 1 if x in liked_ids else 0)
+
+            X = df[feature_cols]
+            X = MinMaxScaler().fit_transform(X)
+            y = df['liked']
+
+            rf = RandomForestClassifier(n_estimators=100, random_state=42)
+            rf.fit(X, y)
+
+            df['like_prob'] = rf.predict_proba(X)[:, 1]
+            rekomendasi = df[~df['track_id'].isin(liked_ids)].sort_values(by='like_prob', ascending=False).drop_duplicates('track_name').head(10)
+
+            st.subheader("Rekomendasi Berdasarkan Model Anda:")
+            for idx, row in rekomendasi.iterrows():
+                st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']}) | Probabilitas Suka: `{row['like_prob']:.2f}`")
+        elif selected_tracks:
+            st.info("Klik tombol untuk melatih model dan melihat rekomendasi.")
 
 # ------------------ PAGE 3: HISTORY ------------------
 elif page == "Riwayat":
@@ -102,37 +144,3 @@ elif page == "Riwayat":
                 st.write(f"- {song[0]} - {song[1]}")
     else:
         st.info("Belum ada pencarian dilakukan.")
-
-# ------------------ PAGE 4: SIMULASI RF ------------------
-elif page == "Simulasi RF":
-    st.title("Simulasi Rekomendasi Personal (Random Forest)")
-
-    st.subheader("1. Pilih Lagu Favorit")
-    track_options = df[['track_name', 'track_artist']].drop_duplicates()
-    selected_tracks = st.multiselect("Pilih 3-10 lagu favorit:",
-                                     track_options.apply(lambda x: f"{x['track_name']} - {x['track_artist']}", axis=1))
-
-    if st.button("Latih Model dan Rekomendasikan") and selected_tracks:
-        liked_ids = []
-        for track_str in selected_tracks:
-            name, artist = track_str.split(" - ", 1)
-            result = df[(df['track_name'] == name) & (df['track_artist'] == artist)]
-            if not result.empty:
-                liked_ids.append(result.iloc[0]['track_id'])
-
-        df['liked'] = df['track_id'].apply(lambda x: 1 if x in liked_ids else 0)
-
-        X = df[feature_cols]
-        y = df['liked']
-
-        rf = RandomForestClassifier(n_estimators=100, random_state=42)
-        rf.fit(X, y)
-
-        df['like_prob'] = rf.predict_proba(X)[:, 1]
-        rekomendasi = df[~df['track_id'].isin(liked_ids)].sort_values(by='like_prob', ascending=False).drop_duplicates('track_name').head(10)
-
-        st.subheader("Rekomendasi Berdasarkan Model Anda:")
-        for idx, row in rekomendasi.iterrows():
-            st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']}) | Probabilitas Suka: `{row['like_prob']:.2f}`")
-    elif selected_tracks:
-        st.info("Klik tombol untuk melatih model dan melihat rekomendasi.")
