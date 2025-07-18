@@ -45,9 +45,9 @@ if page == "Home":
 
 # ------------------ PAGE 2: REKOMENDASI ------------------
 elif page == "Rekomendasi":
-    st.title("Rekomendasi Lagu Berdasarkan Input Anda")
+    st.title("Rekomendasi Lagu Mirip dengan Input Anda")
 
-    track_input = st.text_input("Masukkan judul lagu favorit Anda")
+    track_input = st.text_input("🎧 Masukkan judul lagu favorit Anda")
 
     if track_input:
         matched = df[df['track_name'].str.lower().str.contains(track_input.lower())]
@@ -70,9 +70,18 @@ elif page == "Rekomendasi":
             recommendations = df[df['track_id'] != selected_track['track_id']].sort_values(by='similarity', ascending=False)
             recommendations = recommendations.drop_duplicates('track_name').head(5)
 
-            # Tampilkan
-            st.subheader("Rekomendasi Lagu:")
-            st.table(recommendations[['track_name', 'track_artist', 'playlist_genre', 'similarity']])
+            # Tampilkan hasil seperti tampilan Spotify
+            st.markdown("## 🎯 Rekomendasi Teratas")
+            top_reco = recommendations.iloc[0]
+            st.markdown(f"**🎵 {top_reco['track_name']}**  ")
+            st.markdown(f"*{top_reco['track_artist']}*  ")
+            st.markdown(f"Genre: `{top_reco['playlist_genre']}` | Kecocokan: `{top_reco['similarity']:.2f}`")
+
+            st.markdown("---")
+            st.markdown("## 🔁 More Like This")
+            for i in range(1, len(recommendations)):
+                row = recommendations.iloc[i]
+                st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']})")
 
             # Simpan output ke history
             st.session_state.history[-1]['output'] = recommendations[['track_name', 'track_artist']].values.tolist()
@@ -123,6 +132,7 @@ elif page == "Simulasi RF":
         rekomendasi = df[~df['track_id'].isin(liked_ids)].sort_values(by='like_prob', ascending=False).drop_duplicates('track_name').head(10)
 
         st.subheader("Rekomendasi Berdasarkan Model Anda:")
-        st.table(rekomendasi[['track_name', 'track_artist', 'playlist_genre', 'like_prob']])
+        for idx, row in rekomendasi.iterrows():
+            st.markdown(f"- **{row['track_name']}** — *{row['track_artist']}* (🎧 {row['playlist_genre']}) | Probabilitas Suka: `{row['like_prob']:.2f}`")
     elif selected_tracks:
         st.info("Klik tombol untuk melatih model dan melihat rekomendasi.")
