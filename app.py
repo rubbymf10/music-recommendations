@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from fuzzywuzzy import process
+from rapidfuzz import process
 
 # === Load Dataset ===
 @st.cache_data
@@ -93,8 +93,8 @@ elif page == "Rekomendasi":
     with tab2:
         manual_input = st.text_input("Masukkan Judul Lagu Manual")
         if manual_input:
-            result = process.extractOne(manual_input.lower(), df['track_name'])
-            if result and result[1] > 75:
+            result = process.extractOne(manual_input.lower(), df['track_name'], score_cutoff=75)
+            if result:
                 matched_title = result[0]
                 selected_index = df[df['track_name'] == matched_title].index[0]
                 st.success(f"Judul cocok ditemukan: {matched_title} (Skor: {result[1]})")
